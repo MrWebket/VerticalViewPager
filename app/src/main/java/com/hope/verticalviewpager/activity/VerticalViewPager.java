@@ -273,7 +273,7 @@ public class VerticalViewPager extends FrameLayout {
     private int mFinalPaddingTop;
 
     private void moveDown(float distance) {
-        int top =  -getMoveView().getMeasuredHeight() + (int) distance;
+        int top =  Math.min(-getMoveView().getMeasuredHeight() + (int) distance, getFinalPaddingTop());
 
         MarginLayoutParams params = (MarginLayoutParams) getMoveView().getLayoutParams();
         params.topMargin = top;
@@ -282,6 +282,7 @@ public class VerticalViewPager extends FrameLayout {
     }
 
     private int getFinalPaddingTop() {
+
         if(mFinalPaddingTop == 0) {
             mFinalPaddingTop = getTopView().getTop();
         }
@@ -289,12 +290,8 @@ public class VerticalViewPager extends FrameLayout {
     }
 
     private void moveUp(float distance) {
-
-        MarginLayoutParams params = (MarginLayoutParams) getTopView().getLayoutParams();
-        params.topMargin = Math.abs((int)distance);
-
         int left = getTopView().getLeft();
-        int top = getFinalPaddingTop() + (int) distance;
+        int top = Math.min(getFinalPaddingTop() + (int) distance, getFinalPaddingTop());
         getTopView().layout(left, top, left + getTopView().getWidth(), top + getTopView().getHeight());
     }
 
@@ -329,9 +326,10 @@ public class VerticalViewPager extends FrameLayout {
         if(mDataSource == null || mDataSource.size() == 0) {
             return false;
         }
-        if(Math.abs(distance) < 30 || mTouchState == TOUCH_STATE_ANIM) {
+        if((Math.abs(distance) < 30 && mTouchState == TOUCH_DRAG_NORMAL) || mTouchState == TOUCH_STATE_ANIM) {
             isIntercept = false;
         }
+
         if(mCurrentItem == 1 && distance > 0) {
             isIntercept = false;
         }
@@ -359,16 +357,20 @@ public class VerticalViewPager extends FrameLayout {
                 break;
             case MotionEvent.ACTION_MOVE:
                 mTouchMoveY = event.getY();
-                mLastDistanceY = (mTouchMoveY - mTouchDownY + 0.5f) / FRICTION;
+                mLastDistanceY = (mTouchMoveY - mTouchDownY) / FRICTION;
                 isIntercept = resetIntercept((int)mLastDistanceY);
                 if(isIntercept) {
-                    mTouchState = mLastDistanceY > 0 ? TOUCH_DRAG_DOWN : TOUCH_DRAG_UP;
+                    if(mTouchState == TOUCH_DRAG_NORMAL) {
+                        mTouchState = mLastDistanceY > 0 ? TOUCH_DRAG_DOWN : TOUCH_DRAG_UP;
+                    }
 
                     switch (mTouchState) {
                         case TOUCH_DRAG_DOWN:
+                            mLastDistanceY = Math.max(mLastDistanceY, 0);
                             moveDown(mLastDistanceY);
                             break;
                         case TOUCH_DRAG_UP:
+                            mLastDistanceY = Math.min(mLastDistanceY, 0);
                             moveUp(mLastDistanceY);
                             break;
                     }
@@ -377,10 +379,9 @@ public class VerticalViewPager extends FrameLayout {
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_UP:
                 if(mLastDistanceY != 0 && isIntercept) {
+//                    mTouchState = mLastDistanceY > 0 ? TOUCH_DRAG_DOWN : TOUCH_DRAG_UP;
+                    mLastDistanceY = (mTouchMoveY - mTouchDownY) / FRICTION;
 
-                    mTouchState = mLastDistanceY > 0 ? TOUCH_DRAG_DOWN : TOUCH_DRAG_UP;
-
-                    mLastDistanceY = (mTouchMoveY - mTouchDownY + 0.5f) / FRICTION;
 
                     final VelocityTracker velocityTracker = mVelocityTracker;
                     // 计算当前速度
@@ -412,6 +413,8 @@ public class VerticalViewPager extends FrameLayout {
                             }
                             break;
                     }
+                } else {
+                    mTouchState = TOUCH_DRAG_NORMAL;
                 }
                 break;
         }
