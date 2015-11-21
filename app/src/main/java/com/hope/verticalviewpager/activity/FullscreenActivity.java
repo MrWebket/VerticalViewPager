@@ -1,6 +1,7 @@
 package com.hope.verticalviewpager.activity;
 
 import android.app.Activity;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.widget.Button;
 
@@ -11,6 +12,9 @@ import java.util.List;
 
 
 public class FullscreenActivity extends Activity {
+
+
+    private static final int[] COLORS = new int[] { Color.BLACK, Color.BLUE, Color.CYAN, Color.DKGRAY};
 
     private static final String TAG = FullscreenActivity.class.getSimpleName();
 
@@ -43,6 +47,7 @@ public class FullscreenActivity extends Activity {
                 } else {
                     holder = (ViewHolder) childView.getTag();
                 }
+                childView.setBackgroundColor(COLORS[position]);
 
                 holder.btn.setText(mDataSource.get(position));
             }

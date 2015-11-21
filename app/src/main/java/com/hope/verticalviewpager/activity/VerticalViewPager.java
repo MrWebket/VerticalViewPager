@@ -3,10 +3,13 @@ package com.hope.verticalviewpager.activity;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.util.AttributeSet;
-import android.util.Log;
+import android.util.DisplayMetrics;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.WindowManager;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
 import android.view.animation.AnimationSet;
@@ -29,14 +32,22 @@ public class VerticalViewPager extends FrameLayout {
 
     private static final String TAG = VerticalViewPager.class.getSimpleName();
 
-    private static final int ANIM_DURATION = 500;
+    private static final int SNAP_VELOCITY_DIP_PER_SECOND = 300;
+
+    protected static final float FRICTION = 2.0f;
+
+    private static final int ANIM_DURATION = 400;
 
     private static final int DURATION = 500;
 
     /** 往下拖拽 */
     private static final int TOUCH_DRAG_DOWN = 1;
+
+    private static final int TOUCH_DRAG_DOWN_ROLL_BACK = 9;
     /** 往上拖拽 */
     private static final int TOUCH_DRAG_UP = 2;
+
+    private static final int TOUCH_DRAG_UP_ROLL_BACK = 5;
 
     private static final int TOUCH_DRAG_NORMAL = 3;
 
@@ -45,6 +56,8 @@ public class VerticalViewPager extends FrameLayout {
     private int mTouchState = TOUCH_DRAG_NORMAL;
 
     private static final int CHILD_COUNT = 5;
+
+    private int mMinSlideDistance;
 
     private int childPaddingLeft;
     private int childPaddingRight;
@@ -69,6 +82,13 @@ public class VerticalViewPager extends FrameLayout {
     private float mTouchMoveY;
 
     private float mLastDistanceY;
+
+    /** 速度跟踪 */
+    private VelocityTracker mVelocityTracker;
+
+    private int mMaximumVelocity;
+
+    private int mDensityAdjustedSnapVelocity;
 
     public VerticalViewPager(Context context) {
         super(context);
@@ -108,6 +128,13 @@ public class VerticalViewPager extends FrameLayout {
             addView(child, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         }
 
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        ((WindowManager) getContext().getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getMetrics(displayMetrics);
+        mDensityAdjustedSnapVelocity = (int) (displayMetrics.density * SNAP_VELOCITY_DIP_PER_SECOND);
+
+        final ViewConfiguration configuration = ViewConfiguration.get(getContext());
+        mMaximumVelocity = configuration.getScaledMaximumFlingVelocity();
+
         mScroller = new Scroller(getContext(), new DecelerateInterpolator());
     }
 
@@ -146,9 +173,11 @@ public class VerticalViewPager extends FrameLayout {
         super.onLayout(changed, left, top, right, bottom);
 
         if(isUserRefresh) {
+
+            mMinSlideDistance = getHeight() / 5;
+
             isUserRefresh = false;
             int totalChildCount = getChildCount();
-            Log.d(TAG, "onLayout ");
             int mTotalChildOffset = 0;
 
             getHideView().setVisibility(View.GONE);
@@ -312,21 +341,26 @@ public class VerticalViewPager extends FrameLayout {
         return isIntercept;
     }
 
+    private boolean isIntercept = false;
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if(!mScroller.isFinished()) {
             return false;
         }
+        if (mVelocityTracker == null)
+            mVelocityTracker = VelocityTracker.obtain();
+
+        mVelocityTracker.addMovement(event);
+
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 mTouchDownY = event.getY();
                 break;
             case MotionEvent.ACTION_MOVE:
                 mTouchMoveY = event.getY();
-                mLastDistanceY = mTouchMoveY - mTouchDownY;
-
-                boolean isIntercept = resetIntercept((int)mLastDistanceY);
+                mLastDistanceY = (mTouchMoveY - mTouchDownY + 0.5f) / FRICTION;
+                isIntercept = resetIntercept((int)mLastDistanceY);
                 if(isIntercept) {
                     mTouchState = mLastDistanceY > 0 ? TOUCH_DRAG_DOWN : TOUCH_DRAG_UP;
 
@@ -342,13 +376,40 @@ public class VerticalViewPager extends FrameLayout {
                return isIntercept;
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_UP:
-                if(mLastDistanceY != 0) {
+                if(mLastDistanceY != 0 && isIntercept) {
+
+                    mTouchState = mLastDistanceY > 0 ? TOUCH_DRAG_DOWN : TOUCH_DRAG_UP;
+
+                    mLastDistanceY = (mTouchMoveY - mTouchDownY + 0.5f) / FRICTION;
+
+                    final VelocityTracker velocityTracker = mVelocityTracker;
+                    // 计算当前速度
+                    velocityTracker.computeCurrentVelocity(1000, mMaximumVelocity);
+
+                    // y方向的速度
+                    int velocity = (int) velocityTracker.getYVelocity();
+
                     switch (mTouchState) {
                         case TOUCH_DRAG_DOWN:
-                            mScroller.startScroll(0, 0, 0, getFinalPaddingTop() + getTopView().getMeasuredHeight() - (int) mLastDistanceY, DURATION);
+                            if(Math.abs(velocity) > mDensityAdjustedSnapVelocity || Math.abs(mLastDistanceY) > mMinSlideDistance) { //满足滑动条件
+                                mScroller.startScroll(0, 0, 0,
+                                        getFinalPaddingTop() + getTopView().getMeasuredHeight() - (int) mLastDistanceY, DURATION);
+                            } else {
+                                mTouchState = TOUCH_DRAG_DOWN_ROLL_BACK;
+
+                                mScroller.startScroll(0, 0, 0, Math.abs((int)mLastDistanceY), DURATION);
+                            }
+
                             break;
                         case TOUCH_DRAG_UP:
-                            mScroller.startScroll(0, 0, 0, getFinalPaddingTop() + getTopView().getMeasuredHeight() - (int) mLastDistanceY, DURATION);
+                            if(Math.abs(velocity) > mDensityAdjustedSnapVelocity || Math.abs(mLastDistanceY) > mMinSlideDistance) { //满足滑动条件
+                                mScroller.startScroll(0, 0, 0,
+                                        getFinalPaddingTop() + getTopView().getMeasuredHeight() - (int) mLastDistanceY, DURATION);
+                            } else {
+                                mTouchState = TOUCH_DRAG_UP_ROLL_BACK;
+
+                                mScroller.startScroll(0, 0, 0, Math.abs((int)mLastDistanceY), DURATION);
+                            }
                             break;
                     }
                 }
@@ -366,6 +427,18 @@ public class VerticalViewPager extends FrameLayout {
                     moveDown(mLastDistanceY + mScroller.getCurrY());
                     if(mScroller.isFinished()) {
                         dragDownFinishedAnim();
+                    }
+                    break;
+                case TOUCH_DRAG_DOWN_ROLL_BACK:
+                    moveDown(mLastDistanceY - mScroller.getCurrY());
+                    if(mScroller.isFinished()) {
+                        mTouchState = TOUCH_DRAG_NORMAL;
+                    }
+                    break;
+                case TOUCH_DRAG_UP_ROLL_BACK:
+                    moveUp(mLastDistanceY + mScroller.getCurrY());
+                    if(mScroller.isFinished()) {
+                        mTouchState = TOUCH_DRAG_NORMAL;
                     }
                     break;
                 case TOUCH_DRAG_UP:
@@ -386,7 +459,7 @@ public class VerticalViewPager extends FrameLayout {
         isChangeItem = false;
         isUpward = true;
 
-        for (int i = 0; i < getChildCount() - 1; i++) {
+        for (int i = getChildCount() - 1; i > 0 ; i--) {
             if(mDataSource.size() - mCurrentItem <= 2 && getChildAt(i).getVisibility() == View.GONE) {
                 continue;
             }
