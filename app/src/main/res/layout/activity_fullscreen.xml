@@ -1,6 +1,10 @@
 <com.hope.verticalviewpager.activity.VerticalViewPager
+    android:id="@+id/vertical_viewpager"
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:verticalViewPager="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent" android:background="#0099cc">
+    android:layout_height="match_parent"
+    verticalViewPager:child_layout_id="@layout/item"
+    android:background="#0099cc">
 
 </com.hope.verticalviewpager.activity.VerticalViewPager>
